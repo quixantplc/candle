@@ -18,7 +18,6 @@ use metal::{
     ConstantValues, Device, Function, Library, MTLResourceOptions, Value,
 };
 use objc2_metal::{MTLCompileOptions, MTLMathFloatingPointFunctions, MTLMathMode, MTLSize};
-use source::Source;
 pub use utils::BufferOffset;
 use utils::{get_block_dims, get_tile_size, linear_split, EncoderParam, EncoderProvider};
 
