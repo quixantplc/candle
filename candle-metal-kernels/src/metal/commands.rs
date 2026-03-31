@@ -150,9 +150,8 @@ impl Commands {
             let entry = self.select_entry()?;
             let mut state = entry.state.lock()?;
             // End active compute encoder before creating blit encoder
-            if let Some(mut enc) = state.active_encoder.take() {
-                enc.set_cached(false); // Allow Drop to endEncoding
-                drop(enc);
+            if let Some(enc) = state.active_encoder.take() {
+                enc.end_encoding();
             }
             let count = entry.compute_count.fetch_add(1, Ordering::Relaxed);
             let flush = count >= self.compute_per_buffer;
@@ -244,9 +243,8 @@ impl Commands {
                 let mut state = entry.state.lock()?;
 
                 // End active encoder before flushing
-                if let Some(mut enc) = state.active_encoder.take() {
-                    enc.set_cached(false);
-                    drop(enc);
+                if let Some(enc) = state.active_encoder.take() {
+                    enc.end_encoding();
                 }
 
                 if entry.compute_count.load(Ordering::Acquire) > 0 {
@@ -293,9 +291,8 @@ impl Commands {
         reset_to: usize,
     ) -> Result<(), MetalKernelError> {
         // End any active encoder before committing the command buffer
-        if let Some(mut enc) = state.active_encoder.take() {
-            enc.set_cached(false); // Allow Drop to call endEncoding
-            drop(enc);
+        if let Some(enc) = state.active_encoder.take() {
+            enc.end_encoding(); // Explicitly end — don't rely on Drop
         }
         state.current.commit();
         let new_cb = create_command_buffer(&self.command_queue, Arc::clone(&entry.semaphore))?;
