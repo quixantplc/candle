@@ -137,7 +137,7 @@ impl Commands {
             // Return a clone of the active encoder that won't end encoding on drop.
             // The active_encoder owns the encoding session.
             let active = state.active_encoder.as_ref().unwrap();
-            let encoder = active.clone_non_owning();
+            let encoder = unsafe { active.view() };
             Ok((flush, encoder))
         } else {
             let entry = self.select_entry()?;
@@ -149,9 +149,9 @@ impl Commands {
         if reuse_encoder_enabled() {
             let entry = self.select_entry()?;
             let mut state = entry.state.lock()?;
-            // End active compute encoder before creating blit encoder
+            // End active compute encoder before creating blit encoder.
             if let Some(enc) = state.active_encoder.take() {
-                enc.end_encoding();
+                enc.end_encoding_raw();
             }
             let count = entry.compute_count.fetch_add(1, Ordering::Relaxed);
             let flush = count >= self.compute_per_buffer;
@@ -242,9 +242,10 @@ impl Commands {
 
                 let mut state = entry.state.lock()?;
 
-                // End active encoder before flushing
+                // End active encoder before flushing.
+                // Use end_encoding_raw to avoid semaphore deadlock.
                 if let Some(enc) = state.active_encoder.take() {
-                    enc.end_encoding();
+                    enc.end_encoding_raw();
                 }
 
                 if entry.compute_count.load(Ordering::Acquire) > 0 {
@@ -290,9 +291,10 @@ impl Commands {
         state: &mut EntryState,
         reset_to: usize,
     ) -> Result<(), MetalKernelError> {
-        // End any active encoder before committing the command buffer
+        // End any active encoder before committing the command buffer.
+        // Use end_encoding_raw to avoid semaphore deadlock (caller holds the lock).
         if let Some(enc) = state.active_encoder.take() {
-            enc.end_encoding(); // Explicitly end — don't rely on Drop
+            enc.end_encoding_raw();
         }
         state.current.commit();
         let new_cb = create_command_buffer(&self.command_queue, Arc::clone(&entry.semaphore))?;
