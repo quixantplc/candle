@@ -9,6 +9,7 @@ use std::{ffi::c_void, ptr, sync::Arc};
 pub struct ComputeCommandEncoder {
     raw: Retained<ProtocolObject<dyn MTLComputeCommandEncoder>>,
     semaphore: Arc<CommandSemaphore>,
+    cached: bool,
 }
 
 impl AsRef<ComputeCommandEncoder> for ComputeCommandEncoder {
@@ -21,7 +22,18 @@ impl ComputeCommandEncoder {
         raw: Retained<ProtocolObject<dyn MTLComputeCommandEncoder>>,
         semaphore: Arc<CommandSemaphore>,
     ) -> ComputeCommandEncoder {
-        ComputeCommandEncoder { raw, semaphore }
+        ComputeCommandEncoder { raw, semaphore, cached: false }
+    }
+
+    /// Create a non-owning clone that shares the same Metal encoder.
+    /// This clone will NOT call endEncoding on drop (cached=true).
+    /// The original (owning) encoder is responsible for ending the encoding session.
+    pub fn clone_non_owning(&self) -> ComputeCommandEncoder {
+        ComputeCommandEncoder {
+            raw: self.raw.clone(), // Retained::clone increments refcount
+            semaphore: Arc::clone(&self.semaphore),
+            cached: true, // Don't endEncoding on drop
+        }
     }
 
     pub(crate) fn signal_encoding_ended(&self) {
@@ -96,7 +108,21 @@ impl ComputeCommandEncoder {
 
 impl Drop for ComputeCommandEncoder {
     fn drop(&mut self) {
-        self.end_encoding();
+        if !self.cached {
+            self.end_encoding();
+        } else {
+            // Cached encoder: don't end encoding, but still signal semaphore
+            // so the command buffer entry can be reused
+            self.semaphore.set_status(CommandStatus::Available);
+        }
+    }
+}
+
+impl ComputeCommandEncoder {
+    /// Mark this encoder as cached — it won't end encoding on drop.
+    /// The owner is responsible for calling end_encoding() explicitly.
+    pub fn set_cached(&mut self, cached: bool) {
+        self.cached = cached;
     }
 }
 
